@@ -1,0 +1,92 @@
+App = {
+  web3Provider: null,
+  contracts: {},
+
+  init: async function() {
+    return await App.initWeb3();
+  },
+
+  initWeb3: async function() {
+    // Modern dapp browsers...
+    if (window.ethereum) {
+      App.web3Provider = window.ethereum;
+      try {
+        // Request account access
+        await window.ethereum.enable();
+      } catch (error) {
+        // User denied account access...
+        console.error("User denied account access")
+      }
+    }
+    // Legacy dapp browsers...
+    else if (window.web3) {
+      App.web3Provider = window.web3.currentProvider;
+    }
+    // If no injected web3 instance is detected, fall back to Ganache
+    else {
+      App.web3Provider = new Web3.providers.HttpProvider('http://localhost:7545');
+    }
+    web3 = new Web3(App.web3Provider);
+
+    return App.initContract();
+  },
+
+  initContract: function() {
+  
+    $.getJSON('BlockchainSplitwise.json', function(data) {
+      // Get the necessary contract artifact file and instantiate it with truffle-contract
+      var BlockchainSplitwiseArtifact = data;
+      App.contracts.BlockchainSplitwise = TruffleContract(BlockchainSplitwiseArtifact);
+
+      // Set the provider for our contract
+      App.contracts.BlockchainSplitwise.setProvider(App.web3Provider);
+
+      App.listenForEvents();
+
+      return App.render();
+    });
+    
+  },
+
+  
+  // Listen for events emitted from the contract
+  listenForEvents: function() {
+    App.contracts.BlockchainSplitwise.deployed().then(function(instance) {
+      // Restart Chrome if you are unable to receive this event
+      // This is a known issue with Metamask
+      // https://github.com/MetaMask/metamask-extension/issues/2393
+      instance.Log_AddIOU({}, {
+        fromBlock: 0,
+        toBlock: 'latest'
+      }).watch(function(error, event) {
+        console.log("event triggered", event)
+        // Reload when a new debt is recorded
+        App.render();
+      });
+    });
+  },
+
+  
+  render: function() {
+    var blockchainSplitwiseInstance;
+    var total_owed = $("#total_owed");
+    var last_active = $("#last_active");
+    var accountAddress = $("accountAddress");
+
+    // Load account data
+    web3.eth.getCoinbase(function(err, account) {
+      if (err === null) {
+        App.account = account;
+        $("#accountAddress").html("Your Account: " + account);
+      }
+    });
+  }
+                        
+  
+};
+
+$(function() {
+  $(window).load(function() {
+    App.init();
+  });
+});
