@@ -103,9 +103,6 @@ function doBFS(start, end, getNeighbors) {
 
 // This is a log function, provided if you want to display things to the page instead of the JavaScript console
 // Pass in a discription of what you're printing, and then the object to print
-function log(description, obj) {
-  $("#log").html($("#log").html() + description + ": " + JSON.stringify(obj, null, 2) + "\n\n");
-}
 
 App = {
   web3Provider: null,
@@ -164,17 +161,16 @@ App = {
       // Restart Chrome if you are unable to receive this event
       // This is a known issue with Metamask
       // https://github.com/MetaMask/metamask-extension/issues/2393
-      instance.Log_AddIOU({}, {
+      instance.LogAdd_IOU({}, {
         fromBlock: 0,
         toBlock: 'latest'
       }).watch(function(error, event) {
-        console.log("event triggered", event)
+        console.log("debt added", event);
         // Reload when a new debt is recorded
         App.render();
       });
     });
   },
-
 
   render: function() {
     var blockchainSplitwiseInstance;
@@ -197,21 +193,26 @@ App = {
     // . is to select element with HTML class
     web3.eth.getAccounts(function(err, accounts) {
       $(".wallet_addresses").html(accounts.map(function (a) {
-        return "<li>" + a + "</li>"
+        return "<li>" + a + "</li>";
       }));
     });
 
-    // This code updates the 'Users' list in the UI with
-    // the results of your function
+
     // This code updates the 'Users' list in the UI with the results of your function
-    $("#all_users").html(getUsers().map(function (u,i) { return "<li>"+u+"</li>" }));
+    $("#all_users").html(getUsers().map(function (u,i) { return "<li>"+u+"</li>"; }));
 
     // log to JavaScript console
-    log("test", "hi");
+    App.log("test", "hi");
+    App.contracts.BlockchainSplitwise.deployed().then(function(instance){
+      calls = getAllFunctionCalls(instance.address, add_IOU);
+      App.log(calls, "calls to add_IOU");
+    } );
   },
 
   // This runs the 'add_IOU' function when you click the button
-  // It passes the values from the two inputs above
+  // It passes the values from the two inputs above 
+  // The person you owe money to is passed as 'creditor'
+  // The amount you owe them is passed as 'amount'
   addIOU: function() {
     var creditor = $("#creditor").val();
     var amount = $("#amount").val();
@@ -222,15 +223,70 @@ App = {
       return instance.add_IOU(amount, creditor, path_formed, path,
                               { from: App.account });
     }).then(function(result){
-      console.log("IOU added")
+      console.log("IOU added");
       // TODO: check this
       window.location.reload(true);
     }).catch(function(err) {
       console.error(err);
     });
+  },
 
+  // This is a log function, provided if you want to display things to the page instead of the JavaScript console
+  // Pass in a discription of what you're printing, and then the object to print
+  log: function(description, obj) {
+    $("#log").html($("#log").html() + description + ": " + JSON.stringify(obj, null, 2) + "\n\n");
+  },
+
+  // We've provided a breadth-first search implementation for you, if that's useful
+  // It will find a path from start to end (or return null if none exists)
+  // You just need to pass in a function ('getNeighbors') that takes a node (string) and returns its neighbors (as an array)
+  doBFS: function(start, end, getNeighbors) {
+	  var queue = [[start]];
+	  while (queue.length > 0) {
+		  var cur = queue.shift();
+		  var lastNode = cur[cur.length-1];
+		  if (lastNode === end) {
+			  return cur;
+		  } else {
+			  var neighbors = getNeighbors(lastNode);
+			  for (var i = 0; i < neighbors.length; i++) {
+				  queue.push(cur.concat([neighbors[i]]));
+			  }
+		  }
+	  }
+	  return null;
+  },
+
+
+  // This searches the block history for all calls to 'functionName' (string) on the 'addressOfContract' (string) contract
+  // It returns an array of objects, one for each call, containing the sender ('from') and arguments ('args')
+  getAllFunctionCalls: function(addressOfContract, functionName) {
+	  var curBlock = web3.eth.blockNumber();
+	  var function_calls = [];
+	  while (curBlock !== GENESIS) {
+	    var b = web3.eth.getBlock(curBlock, true);
+	    var txns = b.transactions;
+	    for (var j = 0; j < txns.length; j++) {
+	  	  var txn = txns[j];
+	  	  // check that destination of txn is our contract
+	  	  if (txn.to === addressOfContract.toLowerCase()) {
+	  		  var func_call = abiDecoder.decodeMethod(txn.input);
+	  		  // check that the function getting called in this txn is 'functionName'
+	  		  if (func_call && func_call.name === functionName) {
+	  			  var args = func_call.params.map(function (x) {return x.value});
+	  			  function_calls.push({
+	  				  from: txn.from,
+	  				  args: args
+	  			  });
+	  		  }
+	  	  }
+	    }
+	    curBlock = b.parentHash;
+	  }
+	  return function_calls;
   }
-  
+
+
   
 };
 
